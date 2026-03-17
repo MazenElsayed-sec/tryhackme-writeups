@@ -1,7 +1,9 @@
 TryHackMe Writeups
 
-A collection of my personal writeups and notes while solving rooms on TryHackMe.
+This repository contains my personal writeups while solving rooms on TryHackMe.
 
-This repository documents my journey in learning cybersecurity and offensive security. It includes the steps, commands, and techniques I use while working through different rooms.
+The purpose of this repository is to document my journey in learning cybersecurity and offensive security. As I work through different rooms on the platform, I record the steps, commands, and techniques used during the solving process.
 
-The goal of this repository is to track my progress, improve my skills, and keep useful notes for future reference.
+Each writeup typically includes the methodology followed to approach the room, such as reconnaissance, enumeration, exploitation, and privilege escalation when applicable.
+
+This repository serves as a place to track my progress, improve my practical skills, and keep organized notes that I can revisit in the future while continuing to learn and practice in the cybersecurity field.
