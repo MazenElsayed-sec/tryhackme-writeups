@@ -1,0 +1,153 @@
+Task 1
+
+Summary:
+WAF (Web Application Firewall) protects web applications by inspecting web traffic and blocking malicious requests. However,
+WAFs can be absent, misconfigured, or bypassed. The room covers WAF detection methods, fingerprinting, rule analysis, bypass techniques,
+OWASP CRS rules, and WAF limitations.
+
+Q&A
+Q: What does WAF stand for?
+A: Web Application Firewall
+
+------------------------                 -------------------------------------------------------------------                 -----------------------
+Task 2
+
+Summary:
+Set up the lab by starting the AttackBox and Lab Machine. The target web application is available at http://MACHINE_IP,
+while the OWASP Wafcontrol dashboard is available on port 7000 for viewing blocked and logged requests.
+
+Q&A
+Q1. Using Firefox on the AttackBox, confirm that you can access the web page at http://MACHINE_IP.
+Answer: No answer needed.
+
+Q2. Using the provided credentials, confirm that you can log in to the dashboard at http://MACHINE_IP:7000 using the credentials provided in this task.
+Answer: No answer needed.
+
+------------------------                 -------------------------------------------------------------------                 -----------------------
+Task 3
+
+Summary:
+Firewalls evolved from stateless packet filtering to more advanced systems that track connections and inspect application-layer traffic.
+
+Stateless Firewall: Inspects each packet independently using IPs, ports, and protocols. It has no connection awareness and can be bypassed using crafted ACK packets.
+Stateful Firewall: Tracks active connections and validates packets based on the connection state.
+Application-Level Gateway (Proxy): Acts as an intermediary and can inspect and validate application-layer protocols such as HTTP and FTP.
+DPI Firewall: Inspects packet payloads for malicious patterns and signatures.
+NGFW: Combines stateful inspection, DPI, IPS, SSL/TLS decryption, and user/application awareness.
+
+Key idea: Firewalls became progressively more context-aware, moving from simple packet filtering toward deeper inspection and application awareness.
+
+Q&A
+Q1. Which flag can attackers misuse to bypass a stateless firewall?
+Answer: ACK
+
+Q2. What type of firewall tracks active connections?
+Answer: Stateful
+
+------------------------                 -------------------------------------------------------------------                 -----------------------
+Task 4
+
+Summary:
+A WAF (Web Application Firewall) primarily operates at Layer 7 (Application Layer) and inspects HTTP(S) traffic to detect attacks such as SQL injection, XSS, LFI, and command injection.
+WAFs can provide virtual patching, which mitigates known vulnerabilities without changing the vulnerable source code.
+WAF fingerprinting techniques include:
+
+Passive inspection: Checking HTTP headers for WAF indicators.
+Behavioural analysis: Sending harmless attack-like payloads and observing changes such as 403 Forbidden.
+WAFW00F: Automated WAF detection and fingerprinting.
+Nmap http-waf-fingerprint: Useful for scanning multiple hosts/subnets.
+
+Key idea: Understanding whether a WAF exists and how it responds helps identify the WAF and its potential weaknesses.
+
+Q&A
+Q1. Which layer does a WAF primarily inspect?
+Answer: Layer 7
+
+Q2. What do you call mitigating vulnerabilities without source code changes?
+Answer: Virtual patching
+
+Q3. What HTTP status code do you get if you attempt an SQLi against http://MACHINE_IP?
+Answer: 403 Forbidden
+
+------------------------                 -------------------------------------------------------------------                 -----------------------
+Task 5
+
+Summary:
+WAFs mainly use two detection methods:
+
+Signature-based detection: Matches traffic against known attack patterns. It is fast, easy to maintain, and usually has low false positives, but can be bypassed using encoding, case variation, comments, or alternative syntax and cannot detect unknown/zero-day attacks.
+Behavioural (anomaly-based) detection: Learns normal application behaviour and flags deviations. It can detect unknown and zero-day attacks, but may produce more false positives, requires training, and is more computationally expensive.
+Hybrid detection: Combines both methods, often using signatures first and then deeper anomaly/risk analysis.
+
+Q&A
+Q1. Which detection method uses known attack patterns?
+Answer: Signature-based
+
+Q2. What kind of attacks can behavioural detection catch that signature-based cannot?
+Answer: Zero-day attacks
+
+------------------------                 -------------------------------------------------------------------                 -----------------------
+Task 6
+
+Summary:
+WAF rules define how traffic is inspected, logged, or blocked. OWASP CRS uses ModSecurity rules with specialised detection, input normalisation, logging, tagging, and anomaly scoring.
+
+The example SQLi rule:
+
+Uses libinjection to detect SQL injection.
+Normalises input with transformations such as urlDecodeUni to prevent encoding-based bypasses.
+Uses capture and logging to record matched payloads.
+Increases the anomaly score when a critical rule is triggered.
+Uses tags such as SQLi, OWASP CRS, PCI DSS, and paranoia levels to classify the attack.
+
+Q&A
+Q1. Which library does OWASP CRS use to detect SQLi?
+Answer: libinjection
+
+Q2. What transformation handles double URL encoding?
+Answer: urlDecodeUni
+
+Q3. What score is increased when a critical rule triggers?
+Answer: Anomaly score
+
+Q4. Log in to the dashboard at http://MACHINE_IP:7000. Under Attack Control, click Critical Attack, locate the attack that triggered rule 932160 at 2025-11-12 15:38:00. What is the URI that triggered this rule? You need to click View to see the request details.
+Answer: /?parameter=../../../etc/passwd
+
+------------------------                 -------------------------------------------------------------------                 -----------------------
+Task 7
+
+Summary:
+WAFs have important limitations. They depend on good rules, may miss obfuscated or new attacks, and generally cannot understand application logic such as IDOR, authorization bypasses, race conditions, or business logic flaws.
+
+Other limitations include:
+
+Encrypted traffic: The WAF cannot inspect HTTPS payloads unless TLS is terminated/decrypted at the WAF.
+Client-side attacks: Attacks that execute entirely in the browser, such as DOM-based XSS, may bypass the WAF.
+New attack surface: Misconfigured WAF rules and exposed management interfaces can introduce security risks.
+Performance: Deep inspection, regex matching, decoding, and behavioural analysis can increase CPU usage and latency.
+
+Key idea: A WAF is an additional security layer, not a replacement for secure application code, proper access controls, and a comprehensive security strategy.
+
+Q&A
+Q1. What prevents WAFs from inspecting traffic if not terminated at the WAF?
+Answer: Encryption
+
+------------------------                 -------------------------------------------------------------------                 -----------------------
+Task 8
+
+Summary:
+WAFs are designed to mitigate known vulnerabilities, provide virtual patching, and filter malicious web traffic, but they have technical and operational limitations.
+Their effectiveness depends on:
+
+Well-crafted rules
+Proper deployment
+Understanding their limitations
+
+WAFs cannot fix business logic flaws such as IDOR, privilege escalation, or parameter manipulation, and may not protect against encrypted or client-side attacks.
+Key idea: A WAF should be part of a defence-in-depth strategy, not a replacement for secure application development.
+
+Q&A
+
+Q1. What principle should guide WAF use in a defence strategy?
+Answer: Defence in depth
+
